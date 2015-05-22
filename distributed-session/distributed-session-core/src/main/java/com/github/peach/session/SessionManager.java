@@ -13,5 +13,8 @@ import javax.servlet.http.HttpServletResponse;
 public interface SessionManager {
     
     DistributedSession getSession(HttpServletRequest request, HttpServletResponse response, boolean create);
+    void swapIn(DistributedSession session);
     void swapOut(DistributedSession session);
+    String getHostName();
+    void setHostName(String hostName);
 }

@@ -11,7 +11,9 @@ import javax.servlet.http.HttpSession;
  */
 public interface DistributedSession extends HttpSession{
     
+    String getCachedSessionId();
     void swapOut();
+    void swapIn();
     SessionManager getManager();
     void setManager(SessionManager manager);
     HttpSession getLocalSession();

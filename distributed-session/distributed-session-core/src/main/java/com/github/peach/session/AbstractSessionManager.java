@@ -26,91 +26,102 @@ public abstract class AbstractSessionManager implements SessionManager {
 
     protected static final Logger logger = LoggerFactory.getLogger(AbstractSessionManager.class);
     protected Map<String,Object> sessionLockMap = new HashMap<String,Object>();
+    protected String hostName = "localhost";
     
     @Override
     public DistributedSession getSession(HttpServletRequest request, HttpServletResponse response, boolean create) {
-        String sessionId = getSessionCookieManager().searchSessionCookie(request);
-        if(StringUtils.isNotBlank(sessionId)) {
-            logger.info("Searched session cookie:{}", sessionId);
-        }else {
-            sessionId = getSessionCookieManager().createSessionCookie(response);
-            logger.info("Created session cookie:{}", sessionId);
-        }
         
-        return doGetSession(request, sessionId, create);
+        HttpSession session = request.getSession(create);
+        if(null == session) {
+            return null;
+        } 
+        
+        String cachedSessionId = session.getId() +"."+ getHostName();
+        
+        return doGetSession(session, cachedSessionId);
     }
     
     @Override
     public void swapOut(DistributedSession session) {
         
-        Object sessionLock = session.getLocalSession();
+        final Object sessionLock = session.getLocalSession();
         
         synchronized (sessionLock) {
             if(session.isInvalid()) {
                 if(logger.isDebugEnabled()) {
                     logger.debug("Try delete session:{}", JacksonUtil.safeObj2Str(session));
                 }
-                getSessionStorage().delete(session.getId());
-                logger.info("Session:{} deleted.", session.getId());
+                getSessionStorage().delete(session.getCachedSessionId());
+                logger.info("Session:{} deleted.", session.getCachedSessionId());
             }else {
                 
                 if(logger.isDebugEnabled()) {
                     logger.debug("Try save session:{}", JacksonUtil.safeObj2Str(session));
                 }
                 getSessionStorage().save(session);
-                logger.info("Session:{} saved.", session.getId());
+                logger.info("Session:{} saved.", session.getCachedSessionId());
             }
         }
     }
+    
+    @Override
+    public void swapIn(DistributedSession session) {
+        DistributedSession cachedSession = getSessionStorage().load(session.getCachedSessionId());
+        if(null != cachedSession) {
+            copySessionAttributes(cachedSession, session);
+        }
+    }
+    
+
+    @Override
+    public String getHostName() {
+        return hostName;
+    }
+
+    @Override
+    public void setHostName(String hostName) {
+        this.hostName = hostName;
+    }
+
 
     protected SessionCookieManager getSessionCookieManager() {
         return new SessionCookieManagerImpl();
     }
 
-    protected DistributedSession doGetSession(HttpServletRequest request, String sessionId, boolean create) {
-        boolean newSession = false;
-        DistributedSession session = getSessionStorage().load(sessionId);
- 
-        if(null == session) {            
-            if(create) {
-                Object sessionLock = request.getSession();
-                synchronized (sessionLock) {
-                    session = new AbstractDistributedSession(sessionId);
-                    newSession = true;
-                    getSessionStorage().save(session);
-                }
-                
-                logger.info("Get session:{} by create one.", session.getId());
-            }
-
-        }else {
-            logger.info("Get session:{} from session storage.", session.getId());
-        }
+    protected DistributedSession doGetSession(HttpSession httpSession, String cachedSessionId) {
         
-        if(null != session) {
-            session.setManager(this);
-            if(!newSession) { 
-                copyDistributeSessionAttrisToHttpSession(session, request.getSession());
-            }
-            session.bindLocalSession(request.getSession());
+        DistributedSession session = getBindedDistributeSession(httpSession);
+        
+        if(null != session) {             
+            session.swapIn();
+        }else { //new session
             
-            if(logger.isDebugEnabled()) {
-                logger.debug("Get session:{} from session storage.", JacksonUtil.safeObj2Str(session));    
+            synchronized (httpSession) {
+                session = new AbstractDistributedSession(cachedSessionId);
+                session.setManager(this);               
+                session.bindLocalSession(httpSession);
             }
+            
+            session.swapIn();                  
         }
         
         return session;
     }
     
-    
-    protected void copyDistributeSessionAttrisToHttpSession(DistributedSession session, HttpSession httpSession) {
+    protected void copySessionAttributes(HttpSession src, HttpSession tgt) {
         @SuppressWarnings("unchecked")
-        Enumeration<String> attributes = session.getAttributeNames();
+        Enumeration<String> attributes = src.getAttributeNames();
         while(attributes.hasMoreElements()) {
             String attriName = attributes.nextElement();
-            httpSession.setAttribute(attriName, session.getAttribute(attriName));
+            tgt.setAttribute(attriName, src.getAttribute(attriName));
         }
     }
+    
+    protected DistributedSession getBindedDistributeSession(HttpSession httpSession) {
+        return (DistributedSession)httpSession.getAttribute(httpSession.getId()); 
+    }
+    
+    
     
     protected abstract SessionStorage getSessionStorage();
     

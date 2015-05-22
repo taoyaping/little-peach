@@ -5,7 +5,13 @@
 package com.github.peach.session;
 
 import java.io.Serializable;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Enumeration;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 import javax.servlet.ServletContext;
 import javax.servlet.http.HttpSession;
@@ -25,19 +31,22 @@ public class AbstractDistributedSession implements DistributedSession, Serializa
     
     protected transient SessionManager sessionManager;
     
-    protected HttpSession session;
+    protected transient HttpSession session;
     
-    protected String id;
+    protected String cachedSessionId;
     
     protected volatile boolean isValid = true;
     
-    public AbstractDistributedSession(String sessionId) {
-        this.id = sessionId;
+    protected ConcurrentHashMap<String, Object> cachedAttributes = new ConcurrentHashMap<String, Object>();
+    
+    public AbstractDistributedSession(String cachedSessionId) {
+        this.cachedSessionId = cachedSessionId;
     }
     
     @Override
     public void bindLocalSession(HttpSession session) {
         this.session = session;
+        this.session.setAttribute(session.getId(), this);
     }
 
     @Override
@@ -59,6 +68,20 @@ public class AbstractDistributedSession implements DistributedSession, Serializa
         }
         
     }
+    
+    @Override
+    public void swapIn() {
+        if(null != sessionManager) {
+            sessionManager.swapIn(this);
+        }
+    }
+    
+    
+    
+    @Override
+    public String getCachedSessionId() {
+        return cachedSessionId;
+    }
 
     @Override
     public long getCreationTime() {
@@ -68,7 +91,7 @@ public class AbstractDistributedSession implements DistributedSession, Serializa
 
     @Override
     public String getId() {
-        return this.id;    
+        return session.getId();   
     }
 
 
@@ -103,53 +126,56 @@ public class AbstractDistributedSession implements DistributedSession, Serializa
 
     @Override
     public Object getAttribute(String name) {
-        return session.getAttribute(name);
+        
+        return cachedAttributes.get(name);
     }
 
 
     @Override
     public Object getValue(String name) {
-        return session.getValue(name);
+        return getAttribute(name);
     }
 
 
     @Override
     public Enumeration getAttributeNames() {
-        return session.getAttributeNames();
+        
+        return cachedAttributes.keys();
     }
 
+    
 
     @Override
     public String[] getValueNames() {
-        return session.getValueNames();
+     
+        List<String> namesList = new ArrayList<String>(cachedAttributes.keySet());        
+        return namesList.toArray(new String[namesList.size()]);
     }
 
 
     @Override
     public void setAttribute(String name, Object value) {
-        session.setAttribute(name, value);
+        cachedAttributes.put(name, value);
         swapOut();
     }
 
 
     @Override
     public void putValue(String name, Object value) {
-        session.putValue(name, value);
-        swapOut();
+        setAttribute(name, value);
     }
 
 
     @Override
     public void removeAttribute(String name) {
-        session.removeAttribute(name);
+        cachedAttributes.remove(name);
         swapOut();
     }
 
 
     @Override
     public void removeValue(String name) {
-        session.removeValue(name);
-        swapOut();
+        removeAttribute(name);
     }
 
     @Override
@@ -160,7 +186,8 @@ public class AbstractDistributedSession implements DistributedSession, Serializa
         
         synchronized (this) {
             session.invalidate();
-            isValid = false;            
+            isValid = false; 
+            cachedAttributes.clear();
         }
         
         swapOut();
@@ -183,4 +210,6 @@ public class AbstractDistributedSession implements DistributedSession, Serializa
     public HttpSession getLocalSession() {
         return session;
     }
+
+    
 }

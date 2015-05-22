@@ -13,7 +13,6 @@ import javax.servlet.http.HttpServletRequestWrapper;
 import javax.servlet.http.HttpServletResponse;
 import javax.servlet.http.HttpSession;
 
-import org.apache.commons.lang.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -35,9 +34,11 @@ public class HttpServletRequestWrapperFilter implements Filter {
     @Override
     public final void init(FilterConfig filterConfig) throws ServletException {
         String sessionManagerClass = filterConfig.getInitParameter("sessionManager");
+        String hostName = filterConfig.getInitParameter("hostName");
         try {
             Object sessionManagerObj = Class.forName(sessionManagerClass).newInstance();
             sessionManager = (SessionManager)sessionManagerObj;
+            sessionManager.setHostName(hostName);
         } catch (Throwable e) {
             throw new RuntimeException("Load session manager:"+sessionManagerClass+" failed ...", e);
         }

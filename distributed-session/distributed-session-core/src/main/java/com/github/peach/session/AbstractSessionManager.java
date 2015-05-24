@@ -33,6 +33,7 @@ public abstract class AbstractSessionManager implements SessionManager {
         
         HttpSession session = request.getSession(create);
         if(null == session) {
+            logger.debug("Get session null.");
             return null;
         } 
         
@@ -44,22 +45,13 @@ public abstract class AbstractSessionManager implements SessionManager {
     @Override
     public void swapOut(DistributedSession session) {
         
-        final Object sessionLock = session.getLocalSession();
+        Object sessionLock = session.getLocalSession();
         
         synchronized (sessionLock) {
             if(session.isInvalid()) {
-                if(logger.isDebugEnabled()) {
-                    logger.debug("Try delete session:{}", JacksonUtil.safeObj2Str(session));
-                }
                 getSessionStorage().delete(session.getCachedSessionId());
-                logger.info("Session:{} deleted.", session.getCachedSessionId());
             }else {
-                
-                if(logger.isDebugEnabled()) {
-                    logger.debug("Try save session:{}", JacksonUtil.safeObj2Str(session));
-                }
                 getSessionStorage().save(session);
-                logger.info("Session:{} saved.", session.getCachedSessionId());
             }
         }
     }
@@ -90,21 +82,39 @@ public abstract class AbstractSessionManager implements SessionManager {
 
     protected DistributedSession doGetSession(HttpSession httpSession, String cachedSessionId) {
         
-        DistributedSession session = getBindedDistributeSession(httpSession);
+        DistributedSession session = getBoundDistributeSession(httpSession);
         
-        if(null != session) {             
-            session.swapIn();
-        }else { //new session
-            
+        if(null == session) { 
+            //期望session只被创建一次，高并发时应该还是有问题
             synchronized (httpSession) {
-                session = new AbstractDistributedSession(cachedSessionId);
-                session.setManager(this);               
-                session.bindLocalSession(httpSession);
+                if(null == (session = getBoundDistributeSession(httpSession))) {
+                    session = createOne(cachedSessionId, httpSession);                    
+                    logger.info("Create new session:{}.", session);
+                }
             }
-            
-            session.swapIn();                  
+        }else {
+            //guess tomcat重启时，localSession在序列化反序列化时被丢失
+            if (null == session.getLocalSession()) {
+                synchronized (httpSession) {
+                    if(null == session.getLocalSession()) {
+                        session = createOne(cachedSessionId, httpSession);
+                        logger.info("Create new session:{}.", session);
+                    }                    
+                }
+            }else {
+                logger.debug("Get session:{} from local session.", session);
+            }         
         }
         
+        session.swapIn();  
+        
+        return session;
+    }
+    
+    protected DistributedSession createOne(String cachedSessionId, HttpSession httpSession) {
+        DistributedSession session = new AbstractDistributedSession(cachedSessionId);
+        session.setManager(this);
+        session.bindLocalSession(httpSession);
         return session;
     }
     
@@ -117,7 +127,7 @@ public abstract class AbstractSessionManager implements SessionManager {
         }
     }
     
-    protected DistributedSession getBindedDistributeSession(HttpSession httpSession) {
+    protected DistributedSession getBoundDistributeSession(HttpSession httpSession) {
         return (DistributedSession)httpSession.getAttribute(httpSession.getId()); 
     }
     

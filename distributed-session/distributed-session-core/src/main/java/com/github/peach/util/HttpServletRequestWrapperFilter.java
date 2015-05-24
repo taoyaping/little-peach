@@ -60,7 +60,10 @@ public class HttpServletRequestWrapperFilter implements Filter {
             HttpSession session = requestWrapper.getSession(false);
             if(null != session) {
                 if(session instanceof DistributedSession) {
-                    logger.debug("Try sync session：{}", JacksonUtil.safeObj2Str(session));
+                    if(logger.isDebugEnabled()) {
+                        logger.debug("Try sync session：{}", session);
+                    }
+                    
                     sessionManager.swapOut((DistributedSession)session);           
                 }
             }

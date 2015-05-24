@@ -14,7 +14,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.github.peach.session.DistributedSession;
-import com.github.peach.util.JacksonUtil;
 import com.github.peach.util.MemcachedClientLocator;
 
 /**
@@ -49,20 +48,21 @@ public class MemcachedBackendSessionStorage implements SessionStorage{
         while(retry++ < RETRY) {
             int expiry = session.getMaxInactiveInterval() + ADDITIONAL_EXPIREY;
             try {
-                getMemcachedCLient().set(session.getId(), expiry, session, OPT_TIMEOUT);
- 
+                getMemcachedCLient().set(session.getCachedSessionId(), expiry, session, OPT_TIMEOUT);
+                  
                 if(logger.isDebugEnabled()) {
-                    logger.debug("Save session:{} to memcached.", JacksonUtil.safeObj2Str(session));
+                    logger.debug("Save session:{} to memcached.", session);
+                }else {
+                    logger.info("Save session:{} to memcached.", session.getCachedSessionId());
                 }
                 
-                logger.info("Save session:{} to memcached.", session.getId());
                 return;
              
             } catch (TimeoutException | InterruptedException | MemcachedException e) {
                 if(retry == RETRY) {
-                    logger.error("Save session:" + session.getId() +" from memcached error, after retry "+RETRY+" times ...", e);
+                    logger.error("Save session:" + session.getCachedSessionId() +" from memcached error, after retry "+RETRY+" times ...", e);
                 }else {
-                    logger.warn("Save session:" + session.getId() +" from memcached error, retry "+retry+" times ...", e);
+                    logger.warn("Save session:" + session.getCachedSessionId() +" from memcached error, retry "+retry+" times ...", e);
                 }
             }
         }
@@ -80,11 +80,12 @@ public class MemcachedBackendSessionStorage implements SessionStorage{
         while(retry++ < RETRY) {
             try {
                 DistributedSession session = getMemcachedCLient().get(sessionId, OPT_TIMEOUT);
+                         
                 if(logger.isDebugEnabled()) {
-                    logger.debug("Load session:{} from memcached.", JacksonUtil.safeObj2Str(session));
+                    logger.debug("Load session:{} from memcached.", session);
+                }else {
+                    logger.info("Load session:{} from memcached.", sessionId);
                 }
-                
-                logger.info("Load session:{} from memcached.", sessionId);
                 
                 return session;
             } catch (TimeoutException | InterruptedException | MemcachedException e) {

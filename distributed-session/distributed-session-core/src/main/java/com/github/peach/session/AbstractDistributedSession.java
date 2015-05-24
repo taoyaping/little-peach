@@ -6,16 +6,15 @@ package com.github.peach.session;
 
 import java.io.Serializable;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.Enumeration;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 import javax.servlet.ServletContext;
 import javax.servlet.http.HttpSession;
 import javax.servlet.http.HttpSessionContext;
+
+import com.github.peach.util.JacksonUtil;
 
 
 /**
@@ -35,7 +34,7 @@ public class AbstractDistributedSession implements DistributedSession, Serializa
     
     protected String cachedSessionId;
     
-    protected volatile boolean isValid = true;
+    protected transient volatile boolean isValid = true;
     
     protected ConcurrentHashMap<String, Object> cachedAttributes = new ConcurrentHashMap<String, Object>();
     
@@ -180,17 +179,21 @@ public class AbstractDistributedSession implements DistributedSession, Serializa
 
     @Override
     public void invalidate() {
-        if(!isValid) {
-            return;
+        
+        if(isValid) {
+            synchronized (this) {
+                if(isValid) {
+                    isValid = false;
+                    cachedAttributes.clear();
+                    session.invalidate();
+                    
+                }
+            }
         }
         
-        synchronized (this) {
-            session.invalidate();
-            isValid = false; 
-            cachedAttributes.clear();
+        if(isValid) {
+            swapOut();
         }
-        
-        swapOut();
     }
 
 
@@ -211,5 +214,9 @@ public class AbstractDistributedSession implements DistributedSession, Serializa
         return session;
     }
 
-    
+    @Override
+    public String toString() {
+        return "DistributedSession [cachedSessionId=" + cachedSessionId + ", isValid=" + isValid
+            + ", cachedAttributes=" + JacksonUtil.safeObj2Str(cachedAttributes) + "]";
+    }
 }
